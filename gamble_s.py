@@ -2,6 +2,9 @@ import socket
 import threading
 import random
 
+from util import recv_all
+
+
 class DiceGameServer:
     """
     骰子游戏服务器类，用于管理客户端连接和处理押注命令。
@@ -10,10 +13,16 @@ class DiceGameServer:
     - host (str): 服务器IP地址，默认为 '127.0.0.1'
     - port (int): 服务器端口号，默认为 12345
     """
-    def __init__(self, host='127.0.0.1', port=12345):
+
+    def __init__(self, host='0.0.0.0', port=12345, client_num=2):
         self.host = host
         self.port = port
         self.clients = []
+        self.client_msg = {}
+        self.clientNums = client_num
+        self.readyNums = 0
+        self.readyFlag = False
+        self.dice = [0, 0]
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen()
@@ -40,17 +49,24 @@ class DiceGameServer:
         - client_socket (socket): 客户端套接字
         """
         while True:
-            try:
-                data = client_socket.recv(1024).decode().strip()
-                if not data:
-                    break
-                response = self.process_command(data)
-                client_socket.sendall(response.encode())
-            except Exception as e:
-                print(f"Error handling client: {e}")
+            data = recv_all(client_socket)
+            if data == 'exit':
+                client_socket.close()
+                self.clients.remove(client_socket)
                 break
-        client_socket.close()
-        self.clients.remove(client_socket)
+            self.readyNums += 1
+            if self.readyNums >= self.clientNums:
+                self.new_round()
+                self.readyFlag = True
+            while not self.readyFlag:
+                pass
+            response = self.process_command(data)
+            client_socket.sendall(response.encode())
+            self.readyNums -= 1
+            self.readyFlag = False
+
+    def new_round(self):
+        self.dice = [random.randint(1, 6), random.randint(1, 6)]
 
     def process_command(self, command):
         """
@@ -70,28 +86,25 @@ class DiceGameServer:
         amount = int(parts[2])
         currency = parts[3]
 
-        dice1 = random.randint(1, 6)
-        dice2 = random.randint(1, 6)
-
-        result_message = f"庄家叫道：{dice1}、{dice2}……"
+        result_message = f"庄家叫道：{self.dice[0]}、{self.dice[1]}……"
         win_amount = 0
 
-        if bet_type == 'tc' and dice1 + dice2 == 7 and abs(dice1 - dice2) == 5:
+        if bet_type == 'tc' and self.dice[0] + self.dice[1] == 7 and abs(self.dice[0] - self.dice[1]) == 5:
             win_amount = amount * 35
             result_message += " 头彩！"
-        elif bet_type == 'dc' and (dice1 + dice2 == 7 or abs(dice1 - dice2) == 5):
+        elif bet_type == 'dc' and (self.dice[0] + self.dice[1] == 7 or abs(self.dice[0] - self.dice[1]) == 5):
             win_amount = amount * 17
             result_message += " 大彩！"
-        elif bet_type == 'kp' and dice1 % 2 == 0 and dice2 % 2 == 0 and dice1 != dice2:
+        elif bet_type == 'kp' and self.dice[0] % 2 == 0 and self.dice[1] % 2 == 0 and self.dice[0] != self.dice[1]:
             win_amount = amount * 5
             result_message += " 空盘！"
-        elif bet_type == 'qx' and dice1 + dice2 == 7:
+        elif bet_type == 'qx' and self.dice[0] + self.dice[1] == 7:
             win_amount = amount * 5
             result_message += " 七星！"
-        elif bet_type == 'dd' and dice1 % 2 == 1 and dice2 % 2 == 1:
+        elif bet_type == 'dd' and self.dice[0] % 2 == 1 and self.dice[1] % 2 == 1:
             win_amount = amount * 3
             result_message += " 单对！"
-        elif bet_type == 'sx' and dice1 + dice2 in [3, 5, 9, 11]:
+        elif bet_type == 'sx' and self.dice[0] + self.dice[1] in [3, 5, 9, 11]:
             win_amount = amount * 2
             result_message += " 散星！"
         else:
@@ -111,6 +124,7 @@ class DiceGameServer:
             self.clients.append(client_socket)
             thread = threading.Thread(target=self.handle_client, args=(client_socket,))
             thread.start()
+
 
 if __name__ == "__main__":
     server = DiceGameServer()

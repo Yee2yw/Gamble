@@ -1,6 +1,7 @@
 import socket
 import sys
 
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: gamble_c.py <ServerIP>")
@@ -16,13 +17,11 @@ def main():
 
     while True:
         command = input("请输入你的押注命令 (例如 ya tc 10 gold): ")
-        client_socket.sendall(command.encode())
-
+        client_socket.sendall(command.encode()+b'\r\n')
+        print('等待庄家开盘....')
         response = client_socket.recv(1024).decode()
         print(response)
 
+
 if __name__ == "__main__":
     main()
-
-
-
